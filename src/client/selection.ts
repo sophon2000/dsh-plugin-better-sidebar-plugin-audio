@@ -48,7 +48,7 @@ export interface SelectionStats {
  * Read a selection out of the envelopes.
  * @param channels - the channels the user is looking at.
  * @param selection - the dragged range.
- * @param view - current window (maps time to column).
+ * @param view - time domain of the input envelopes, not the displayed viewport.
  * @param width - canvas width in CSS pixels.
  * @param columns - envelope column count.
  * @returns the statistics shown next to the selection.

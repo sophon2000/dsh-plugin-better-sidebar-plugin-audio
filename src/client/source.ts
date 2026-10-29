@@ -11,6 +11,9 @@
 /** Route prefix registered by the host half. */
 export const ROUTE_PREFIX = '/audio-preview'
 
+/** Public Sidebar resolver preserving the Host's deployment base path. */
+type HostRouteUrl = (path: string) => string
+
 /** Everything the viewer needs to play one file. */
 export interface AudioSourceFacts {
   /** Range-capable media URL. */
@@ -62,10 +65,11 @@ export function audioQuery(params: { sessionId: string; path: string; cwd?: stri
  * Build one route URL.
  * @param kind - `meta` or `media`.
  * @param params - session, path and optional cwd fallback.
+ * @param hostRouteUrl - the public Sidebar Host route resolver.
  * @returns the URL to fetch.
  */
-export function buildAudioUrl(kind: 'meta' | 'media', params: { sessionId: string; path: string; cwd?: string | undefined }): string {
-  return `${ROUTE_PREFIX}/${kind}?${audioQuery(params)}`
+export function buildAudioUrl(kind: 'meta' | 'media', params: { sessionId: string; path: string; cwd?: string | undefined }, hostRouteUrl: HostRouteUrl): string {
+  return hostRouteUrl(`${ROUTE_PREFIX.slice(1)}/${kind}?${audioQuery(params)}`)
 }
 
 /** Shape of the host route's JSON envelope. */
@@ -79,17 +83,19 @@ interface RouteEnvelope {
  * Resolve a file to a playable source.
  * @param path - the path better-sidebar opened.
  * @param scope - the session scope (id, and a cwd fallback when present).
+ * @param hostRouteUrl - the public Sidebar Host route resolver.
  * @param signal - aborts the probe when the viewer unmounts.
  * @returns the source facts, or the failure to display.
  */
 export async function loadAudioSource(
   path: string,
   scope: { sessionId: string; cwd?: string | undefined },
+  hostRouteUrl: HostRouteUrl,
   signal?: AbortSignal,
 ): Promise<ViewerData> {
   const params = { sessionId: scope.sessionId, path, cwd: scope.cwd }
   try {
-    const response = await fetch(buildAudioUrl('meta', params), {
+    const response = await fetch(buildAudioUrl('meta', params, hostRouteUrl), {
       signal,
       headers: { accept: 'application/json' },
     })
@@ -100,7 +106,7 @@ export async function loadAudioSource(
     }
     const value = envelope.value
     return {
-      url: buildAudioUrl('media', params),
+      url: buildAudioUrl('media', params, hostRouteUrl),
       path: typeof value.path === 'string' ? value.path : path,
       name: typeof value.name === 'string' ? value.name : path,
       size: typeof value.size === 'number' ? value.size : 0,

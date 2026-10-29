@@ -374,7 +374,7 @@ export function AudioViewer({ data, visible = true }: AudioViewerProps): ReactNo
         setDecoded(result)
         setDecodeState({ status: 'done', loaded: 0, total: 0 })
         setDuration(previous => (previous > 0 ? previous : result.duration))
-        setView(fullView(result.duration))
+        setView(current => current.end > 0 ? clampView(current, result.duration) : fullView(result.duration))
         setChannel(current => (current === 'mix' || current < result.channels ? current : 'mix'))
       } catch (error) {
         if (controller.signal.aborted) return
@@ -871,6 +871,9 @@ export function AudioViewer({ data, visible = true }: AudioViewerProps): ReactNo
   }, [duration])
 
   const onKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.defaultPrevented) return
+    const target = event.target
+    if (target instanceof Element && target.closest('button, input, select, textarea, a[href], [contenteditable]:not([contenteditable="false"])')) return
     const step = event.shiftKey ? 1 : 5
     switch (event.key) {
       case ' ':
@@ -939,8 +942,8 @@ export function AudioViewer({ data, visible = true }: AudioViewerProps): ReactNo
   const stats = useMemo(() => {
     if (selection === null || decoded === null || activePeaks === null) return null
     const list = channel === 'mix' ? envelope.per : [activePeaks]
-    return selectionStats(list, selection, effectiveView, canvasBox.width, decoded.columns)
-  }, [activePeaks, canvasBox.width, channel, decoded, effectiveView, envelope.per, selection])
+    return selectionStats(list, selection, { start: 0, end: decoded.duration }, canvasBox.width, decoded.columns)
+  }, [activePeaks, canvasBox.width, channel, decoded, envelope.per, selection])
 
   const decodeProgress = decodeState.status === 'running' && decodeState.total > 0
     ? Math.round((decodeState.loaded / decodeState.total) * 100)

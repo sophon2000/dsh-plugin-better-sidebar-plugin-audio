@@ -1,4 +1,6 @@
-> Video 维护 fork：`main` 跟随上游，`develop` 保留薄适配；当前 `0.1.0-vh.1` 面向 Better Sidebar `0.28.2-vh.1` 与固定 Video Host。上游基点 `9e59a980a6da85b92697412b8c239bdf5d6bbf66`。正式消费固定归档与摘要，不引用浮动分支。
+> Video 维护 fork：`main` 跟随上游，`develop` 保留薄适配；当前 `0.1.0-vh.2` 面向 Better Sidebar `0.28.2-vh.2` 与固定 Video Host（公开接口仍兼容 `^0.28.2-vh.1`）。上游基点 `9e59a980a6da85b92697412b8c239bdf5d6bbf66`。正式消费固定归档与摘要，不引用浮动分支。
+
+维护版 vh.2 修复：媒体请求通过 Sidebar 公共 `hostRouteUrl` 保留反代前缀；Stop/卸载取消尚未完成的播放请求；表单控件保留自己的键盘行为；隐藏后恢复保留缩放和平移；选区分析使用精确音频数据时间域，短 PCM 的包络列不再混入虚假静音。
 
 <p align="center">
   <a href="https://dshfind.com/zh/plugins/huanlinoto/dsh-plugin-better-sidebar-plugin-audio"><img src="https://dshfind.com/api/card/huanlinoto/dsh-plugin-better-sidebar-plugin-audio?lang=zh" alt="dsh-plugin-better-sidebar-plugin-audio card"></a>
