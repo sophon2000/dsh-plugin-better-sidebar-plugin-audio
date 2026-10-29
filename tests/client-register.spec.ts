@@ -6,10 +6,11 @@ import { VIEWER_ID, VIEWER_PRIORITY, apply } from '../src/client/index.tsx'
 import type { AudioSourceFacts, ViewerData } from '../src/client/source.ts'
 
 /** Registry + effect double for the sidebar service. */
-function fakeHost() {
+function fakeHost(base = 'https://host.test/') {
   const registered: FileViewerDescriptor[] = []
   const disposers: Array<() => void> = []
   const service = {
+    hostRouteUrl: vi.fn((route: string) => new URL(route, base).href),
     registerFileViewer(descriptor: FileViewerDescriptor): () => void {
       registered.push(descriptor)
       const dispose = () => {
@@ -28,7 +29,7 @@ function fakeHost() {
       if (typeof dispose === 'function') effects.push(dispose as () => void)
     },
   }
-  return { ctx, registered, effects, disposers }
+  return { ctx, registered, effects, disposers, hostRouteUrl: service.hostRouteUrl }
 }
 
 /** Stub fetch with the route's JSON envelope. */
@@ -46,6 +47,18 @@ afterEach(() => {
 })
 
 describe('client registration', () => {
+  it.each(['https://host.test/', 'https://host.test/dataops/proxy/3080/'])('uses the public Host route resolver for meta and media under %s', async base => {
+    const host = fakeHost(base)
+    apply(host.ctx as never)
+    const fetchMock = stubMeta({ ok: true, value: { path: '/music/片段 #1.mp3', size: 10 } })
+    const signal = new AbortController().signal
+    const data = await host.registered[0]!.load!('/music/片段 #1.mp3', { sessionId: 's1', cwd: '/music' } as never, signal) as AudioSourceFacts
+    const query = 'sessionId=s1&path=%2Fmusic%2F%E7%89%87%E6%AE%B5+%231.mp3&cwd=%2Fmusic'
+    expect(fetchMock).toHaveBeenCalledWith(`${base}audio-preview/meta?${query}`, { signal, headers: { accept: 'application/json' } })
+    expect(data.url).toBe(`${base}audio-preview/media?${query}`)
+    expect(host.hostRouteUrl.mock.calls).toEqual([[`audio-preview/meta?${query}`], [`audio-preview/media?${query}`]])
+  })
+
   it('registers exactly one viewer for the audio vocabulary', () => {
     const host = fakeHost()
     apply(host.ctx as never)

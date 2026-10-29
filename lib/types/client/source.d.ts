@@ -9,6 +9,8 @@
  */
 /** Route prefix registered by the host half. */
 export declare const ROUTE_PREFIX = "/audio-preview";
+/** Public Sidebar resolver preserving the Host's deployment base path. */
+type HostRouteUrl = (path: string) => string;
 /** Everything the viewer needs to play one file. */
 export interface AudioSourceFacts {
     /** Range-capable media URL. */
@@ -51,21 +53,24 @@ export declare function audioQuery(params: {
  * Build one route URL.
  * @param kind - `meta` or `media`.
  * @param params - session, path and optional cwd fallback.
+ * @param hostRouteUrl - the public Sidebar Host route resolver.
  * @returns the URL to fetch.
  */
 export declare function buildAudioUrl(kind: 'meta' | 'media', params: {
     sessionId: string;
     path: string;
     cwd?: string | undefined;
-}): string;
+}, hostRouteUrl: HostRouteUrl): string;
 /**
  * Resolve a file to a playable source.
  * @param path - the path better-sidebar opened.
  * @param scope - the session scope (id, and a cwd fallback when present).
+ * @param hostRouteUrl - the public Sidebar Host route resolver.
  * @param signal - aborts the probe when the viewer unmounts.
  * @returns the source facts, or the failure to display.
  */
 export declare function loadAudioSource(path: string, scope: {
     sessionId: string;
     cwd?: string | undefined;
-}, signal?: AbortSignal): Promise<ViewerData>;
+}, hostRouteUrl: HostRouteUrl, signal?: AbortSignal): Promise<ViewerData>;
+export {};

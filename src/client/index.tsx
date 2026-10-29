@@ -81,7 +81,7 @@ export function apply(ctx: Context): void {
     priority: VIEWER_PRIORITY,
     fetchStrategy: 'custom',
     load: (path: string, scope: { sessionId: string; cwd?: string | undefined }, signal?: AbortSignal) =>
-      loadAudioSource(path, { sessionId: scope.sessionId, cwd: scope.cwd }, signal),
+      loadAudioSource(path, { sessionId: scope.sessionId, cwd: scope.cwd }, route => betterSidebar.hostRouteUrl(route), signal),
     component: (props: FileViewerProps) => (
       <AudioViewer data={props.customData as ViewerData} visible={props.visible} />
     ),

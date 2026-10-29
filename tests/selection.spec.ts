@@ -33,11 +33,10 @@ describe('selectionStats', () => {
     expect(stats.peakDb).toBe(-120)
   })
 
-  it('scales with the visible window', () => {
-    // The same 0..2 s selection covers half the file when nothing is zoomed…
+  it('maps the selection against the envelopes time domain', () => {
+    // These envelopes cover the full eight seconds regardless of UI zoom.
     expect(selectionStats([peaks], { start: 0, end: 2 }, view, 8, 8).peak).toBeCloseTo(0.5, 6)
-    // …and the loudest part once the view is zoomed into the first half.
-    expect(selectionStats([peaks], { start: 0, end: 2 }, { start: 0, end: 4 }, 8, 8).peak).toBeCloseTo(1, 6)
+    expect(selectionStats([peaks], { start: 0, end: 2 }, view, 1200, 8).peak).toBeCloseTo(0.5, 6)
   })
 })
 

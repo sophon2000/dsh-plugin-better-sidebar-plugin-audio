@@ -36,7 +36,9 @@ export function computeChannelPeaks(samples: Float32Array, columns: number): Cha
   const total = samples.length
   for (let column = 0; column < count; column++) {
     const from = Math.floor((column * total) / count)
-    const to = column === count - 1 ? total : Math.floor(((column + 1) * total) / count)
+    // A column narrower than one sample still represents that sample, not
+    // silence. Keep the last/empty-input bound at the actual PCM length.
+    const to = Math.min(total, Math.max(from + 1, Math.floor(((column + 1) * total) / count)))
     let low = 0
     let high = 0
     let sum = 0
