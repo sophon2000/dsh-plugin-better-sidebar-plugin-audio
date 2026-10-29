@@ -56,7 +56,7 @@ function fakeContext(cwd: string | undefined, sessions: Map<string, { header?: {
   if (cwd !== undefined) sessions.set('s1', { header: { cwd } })
   return {
     sessions: { get: (id: string) => sessions.get(id) },
-    webStartup: { trustedHosts: [] },
+    connection: { requestRejection: request => request.headers['sec-fetch-site'] === 'cross-site' ? 'cross-site' : undefined },
   }
 }
 
@@ -98,20 +98,41 @@ describe('resolveMediaPath', () => {
 })
 
 describe('sessionCwdOf', () => {
-  it('prefers the session header cwd', () => {
-    expect(sessionCwdOf({ get: () => ({ header: { cwd: '/from-session' } }) }, 's1', '/from-client')).toBe('/from-session')
+  it('uses the authoritative session header', async () => {
+    await expect(sessionCwdOf(fakeContext(root), 's1')).resolves.toBe(root)
   })
 
-  it('falls back to the client cwd while the session is hydrating', () => {
-    expect(sessionCwdOf({ get: () => undefined }, 's1', '/from-client')).toBe(resolve('/from-client'))
+  it('rejects unknown sessions instead of trusting a client cwd', async () => {
+    await expect(sessionCwdOf(fakeContext(undefined), 'unknown')).rejects.toMatchObject({ status: 404, code: 'session-not-found' })
   })
 
-  it('falls back to the process cwd as a last resort', () => {
-    expect(sessionCwdOf(undefined, 's1', undefined)).toBe(process.cwd())
+  it('reads the persisted header before the first session attach after restart', async () => {
+    const ctx = { ...fakeContext(undefined), get: (name: string) => name === 'sessionPersistence' ? { stat: async (id: string) => id === 'saved' ? { header: { cwd: root } } : undefined } : undefined } as AudioRouteContext
+    await expect(sessionCwdOf(ctx, 'saved')).resolves.toBe(root)
+    await expect(sessionCwdOf(ctx, 'missing')).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('prefers the attached session committed cwd', async () => {
+    const ctx = { ...fakeContext(root), get: (name: string) => name === 'workingDirectory' ? { get: () => '/committed' } : undefined } as AudioRouteContext
+    await expect(sessionCwdOf(ctx, 's1')).resolves.toBe('/committed')
   })
 })
 
 describe('handleAudioRequest', () => {
+  it('fails closed when the connection service is missing or denies the request', async () => {
+    for (const connection of [undefined, { requestRejection: () => 'unauthorized' }]) {
+      const response = new FakeResponse()
+      await handleAudioRequest(fakeRequest(META_PATH + '?' + query(audioPath)), response as unknown as ServerResponse, { ...fakeContext(root), connection })
+      expect(response.status).toBe(403)
+    }
+  })
+
+  it('rejects unknown sessions even with an absolute path and client cwd', async () => {
+    const response = new FakeResponse()
+    await handleAudioRequest(fakeRequest(META_PATH + '?' + query(audioPath, '&cwd=' + encodeURIComponent(root))), response as unknown as ServerResponse, fakeContext(undefined))
+    expect(response.status).toBe(404)
+  })
+
   it('serves the metadata probe', async () => {
     const response = new FakeResponse()
     await handleAudioRequest(fakeRequest(META_PATH + '?' + query(audioPath)), response as unknown as ServerResponse, fakeContext(root))

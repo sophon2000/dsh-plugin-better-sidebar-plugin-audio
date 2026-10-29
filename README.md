@@ -1,3 +1,5 @@
+> Video 维护 fork：`main` 跟随上游，`develop` 保留薄适配；当前 `0.1.0-vh.1` 面向 Better Sidebar `0.28.2-vh.1` 与固定 Video Host。上游基点 `9e59a980a6da85b92697412b8c239bdf5d6bbf66`。正式消费固定归档与摘要，不引用浮动分支。
+
 <p align="center">
   <a href="https://dshfind.com/zh/plugins/huanlinoto/dsh-plugin-better-sidebar-plugin-audio"><img src="https://dshfind.com/api/card/huanlinoto/dsh-plugin-better-sidebar-plugin-audio?lang=zh" alt="dsh-plugin-better-sidebar-plugin-audio card"></a>
 </p>
@@ -29,7 +31,7 @@ DSH 自己的文档预览把 `mp3/wav/flac/ogg/m4a/aac/wma/opus` 列在「已知
 | 循环 | 关闭 / 整曲循环 / 选区 A-B 循环（`L` 轮换）；A-B 回绕在播放头越过终点时精确跳回 |
 | 选区 | `Shift`+拖动框选；实时读数：区间（含毫秒）、时长、**峰值 dBFS**、**RMS dBFS** |
 | 声道 | 混合 / 左 / 右 / 任意声道独立包络（解码时按声道分别求包络，混合视图按均方合成） |
-| 大文件 | 播放始终走 `<audio>` + Range 流式（不整包解码）；**打开即自动解码**，没有手动按钮：波形包络与下混 PCM 一次算好（约 176 KB/秒），频谱网格再按视窗重算；超过 30 分钟的文件只做流式播放并说明原因 |
+| 大文件 | 播放始终走 `<audio>` + Range 流式。可见面板只自动分析不超过 3 分钟、16 MiB 的文件；下载期间检查字节预算，解码结果超过 64 MiB PCM 时不保留。隐藏面板取消分析、释放 PCM 并停绘图，保留后台试听。浏览器原生解码不可中断，其瞬时峰值不受结果预算保证。 |
 | 降级 | 浏览器解码不了（如 wma）→ 明确提示而不崩；Web Audio 不可用 → 频谱停用但播放照常；路由/读取失败 → 浮层提示原因 |
 
 ## 交互与布局上的几个刻意决定
@@ -43,20 +45,9 @@ DSH 自己的文档预览把 `mp3/wav/flac/ogg/m4a/aac/wma/opus` 列在「已知
 
 ## 安装
 
-本仓库按 **bundle 形式**发布（host 半 + client 半 + `cordis.patch.yml`），`lib/` 预构建入库，`github:` 安装开箱即用：
+本仓库发布 host、client 与 `cordis.patch.yml` 的固定 bundle 归档。Video 产品由 `make dsh` 的配方锁定归档 URL、版本与摘要；不要手工以 `link:` 或浮动 GitHub 分支替换受管输入。独立开发安装使用已构建的精确版本 `.tgz`。
 
-```powershell
-# 本地开发（改完源码重建 lib/ 即可，无需重装）
-dsh plugin --profile web add "link:D:/Projects/deepseek-harness/dsh-plugin-better-sidebar-plugin-audio"
-
-# 远端分发
-dsh plugin --profile web add "github:huanlinoto/dsh-plugin-better-sidebar-plugin-audio"
-
-# npm
-dsh plugin --profile web add "@huanlin/dsh-plugin-better-sidebar-plugin-audio"
-```
-
-安装后**重启 `dsh web`**，浏览器硬刷新（`Ctrl+Shift+R`），然后在文件树里点任意 `.mp3` / `.wav` / `.flac` 等文件。
+接入后重启 Web，文件树中的音频文件进入试听面板。
 
 ## 工作原理
 
@@ -92,21 +83,20 @@ node -e "require('http').createServer((q,s)=>require('fs').readFile('.'+decodeUR
 
 ## 开发
 
-依赖解析靠 `tsconfig.json` 的 `paths` 指向 DSH 源码树（`@deepseek-ai/cordis`）与 better-sidebar 的类型产物；运行期不需要它们（client bundle 通过 DSH 的模块表 `require("react")` / `require("react/jsx-runtime")`）。
+类型解析使用锁文件中的正式 `@deepseek-ai/cordis@4.0.5` 与 `dsh-better-sidebar@0.28.2` 包；不依赖作者机器的源码路径。运行时 client bundle 通过 DSH 模块表读取 React。
 
 ```powershell
-pnpm install          # 首次；本目录自带 pnpm-workspace.yaml，是独立的安装根
+pnpm install --frozen-lockfile # 首次；本目录自带 pnpm-workspace.yaml，是独立的安装根
 pnpm run typecheck    # tsc --noEmit ×2（host 面 + 纯 client 面）
-pnpm test             # vitest run（15 个 spec / 176 用例）
+pnpm test             # vitest run
 pnpm run build        # tsdown（host ESM + client CJS closure）+ tsc 生成 lib/types
 pnpm run bundle:client # 只重打 client bundle（快速迭代）
 ```
 
 ```
 src/
-├─ index.ts             host 入口：注册媒体路由（inject: webServer, sessions, webStartup）
+├─ index.ts             host 入口：注册媒体路由（inject: webServer, sessions, connection）
 ├─ audio-route.ts       Range 解析、路径/cwd 解析、meta 与 media 处理
-├─ trust-fence.ts       浏览器信任栅栏（Host 回环 / trustedHosts / Origin / sec-fetch-site）
 ├─ audio-exts.ts        扩展名与 MIME 的单一事实源（host 白名单 = client 注册表）
 └─ client/
    ├─ index.tsx         client 入口：ctx.betterSidebar.registerFileViewer(...)
@@ -130,13 +120,19 @@ dev/
 └─ shot-*.png           README 引用的实测截图
 ```
 
-## 检查（本插件当前的验证状态）
+## 本 fork 检查
+
+2026-10-29：Node 24.15.0 / pnpm 11.9.0 安装；本地 TypeScript 5.9.3 检查 host/client，tsdown 0.22.14 与 declaration build 通过。Vitest 3.2.7 全套 16 文件 / 182 项通过，包含真实 HTTP、冷会话、A/B 末尾重播、隐藏绘图、解码预算和取消。评审后新增异步文件检查期间客户端断开的真实 HTTP 回归，先复现修复前创建多余文件流，再验证路由相关 25 项通过，并重跑类型检查及构建。此结果不代表消费端浏览器或打包程序的完整验收。
+
+系统 pnpm shim 在受限网络下尝试获取自身版本失败；检查实际通过本仓 `node_modules/.bin/{tsc,vitest,tsdown}` 执行，没有改变锁文件来绕过问题。
+
+## 上游历史验证记录（不作为本 fork 的运行验收）
 
 - `pnpm run typecheck`：通过（strict + `noUncheckedIndexedAccess`，host 与 client 两面各一次）。
 - `pnpm test`：**176 用例全绿**（15 个 spec），覆盖：
   - Range 解析（闭合 / 开放端 / 后缀 / 越界 / 非法 / 多段）；
   - 路由端到端（`200` / `206` + `Content-Range` / `416` / `HEAD` / `400` / `403` / `404` / `405`，含真实临时文件与流式响应落地）；
-  - 信任栅栏矩阵（回环 / 受信 authority / 跨站标记 / 陌生 Origin / 不透明 Origin / 桌面壳 Origin / 缺 Host）；
+  - 宿主鉴权委派、缺失 connection 拒绝、未知会话拒绝及冷会话 header 读取；
   - 扩展名白名单与 MIME 映射（含 `/music.mp3/README.md`、dotfile 这类边界）；
   - 纯函数层：峰值包络与混合声道、选区统计（dBFS）、视窗缩放/平移/刻度、FFT（直流/正弦/非 2 幂拒绝）、全曲 STFT（440 Hz 落在正确频段、静音不归一化成满强度）、FFT 列映射与频率往返、瀑布环形缓冲、**波形视窗映射**（缩进取静音半段必须整幅变平、缩取响亮半段必须拉伸满幅、窗口包络按窗口原点映射——即「缩放不改波形」这一 bug 的回归断言）与**峰值必须是连续带**（每列一个横跨 `[min, max]` 的 1px 宽矩形，退回孤立端点即失败）、**两层必须不同色**（峰值带与 RMS 主体的 fillStyle 必须互不相同，同色回归即失败）及**RMS 主体必须落在峰值带之内**；
   - 配色契约（令牌缺失/未解析链路必须被拒、**引擎只回一个 `transparent` 背景也必须被拒**、已计算颜色必须透传、亮暗判定与回退选择、**RMS 必须与波形可区分**——皮肤把 brand 与 label 设成同色时仍不能糊成一块）；
@@ -146,14 +142,14 @@ dev/
 - client 产物契约：`window.__ModuleLoader__.load({ id: "@huanlin/dsh-plugin-better-sidebar-plugin-audio", factory: (require) => { ... } })`，specifier 仅 `react` 与 `react/jsx-runtime`。
 - **浏览器实测**（`dev/` 验证台）：主区域富余 0 px、页面无溢出；波形像素取自各自皮肤的品牌令牌（暗=洋红、亮=深绿）；真实鼠标点击后实时频谱出现（峰值频率 422 Hz）、空态提示消失；频谱图视图画出 440 Hz 直线与 2–4 秒扫频斜线；拖动波形后 `window.getSelection()` 为空；频谱「关闭」后不再占用高度；**缩放后 `data-view` 收窄且波形像素哈希随之改变**（连续缩放后立即采样与 400 ms 后采样完全一致——同步包络重算没有「先粗后细」的二次切换）；深放大到 0.024–1.282 s 时 1.0–1.072 s 的 6 个 click 簇逐个可见（77–82% 列位），**播放指示条覆盖层**在同一视窗内以 104→207→314→419→525 px 单调移动并精确落在理论播放位置。
 - **真实侧栏复核**（宿主亮色皮肤，文件 `Hanser - Cyberangel.mp3`，7.6 MB / 3:00，逐图层量像素）：修复前主区域 85.5% 的像素被绘制，其中 85.0% 是**同一个不透明近黑**、播放指示条覆盖层**每帧都在画却 0 个不透明像素**（颜色是全透明的）；修复后主区域是严格的两层：**淡色峰值带**（alpha 0.22，65.8% 的已绘制像素）铺满每列 `[min, max]`，**深色 RMS 主体**（合成 alpha 0.86，31.9%）压在其内，网格 0.5%，播放指示条 900 px 不透明橙红——seek 到 40% 落在 221.75 px（理论 221.0），播放中 221.75→226.75→231.75→236.75 px 单调移动且每帧像素数恒定；缩放后 `data-view` 收窄（0.000–180.480 → 40.407–132.813）且波形像素哈希改变、600 ms 后仍一致（无二次切换）。
-- **挂载验证需要人工**（本项目约定不由 agent 启动 `dsh web`）：安装 + 重启 + 硬刷新后，文件树点开一个音频文件，应看到波形面板；拖动进度条应能跳转（证明 206 生效）。
+- 挂载验证由消费端使用隔离 Profile 执行：文件树点开音频、拖动进度、隐藏面板后 A/B 循环及重启后读取。下述旧版浏览器记录不是本 fork 的验收结果。
 
 ## 安全
 
-- 所有请求先过**浏览器信任栅栏**（与 DSH `/api` 网关、better-sidebar `/sidebar/*` 同语义）：Host 必须是回环或 `webStartup.trustedHosts` 中的 authority；带 `sec-fetch-site: cross-site` 一律拒绝；带 `Origin` 时必须与 Host 主机名一致（桌面壳的 `dsh-app://app` 例外）。这是反 DNS-rebinding / 反跨站读取的栅栏，不是身份认证。
-- 路由**只服务音频扩展名**（`audio-exts.ts` 白名单），拿不到别的东西——即使某个页面绕过了栅栏，它也无法把这条路由当作通用文件读取口。
+- 所有请求先调用宿主 `connection.requestRejection`，只有返回 `undefined` 才放行；缺失服务直接拒绝。不复制宿主信任名单，也不为桌面 Origin 增设鉴权例外。
+- 路由只服务音频扩展名（`audio-exts.ts` 白名单）；扩展名限制不代替宿主认证或项目授权。
 - 只接受 `GET` / `HEAD`，只读，无写入面。
-- 路径解析与 better-sidebar v0.23.0+ 一致：相对路径基于会话权威 `cwd`（会话头 → 调用方 `cwd` → `process.cwd()`），绝对路径原样，`~` 展开，**不做包含检查**（`cwd` 是基准而非边界）。越界读取不构成新增权限面：同源页面本来就能用 `/sidebar/api/fs.read` 读任意文件。
+- 相对路径基于 attached 会话的 committed working directory，冷会话读取 `sessionPersistence.stat` 的持久 header；未知会话返回 404，客户端 cwd 不授予访问权。绝对路径保持桌面文件试听语义，cwd 是解析基准而非目录沙箱，不能把该路由当作 Video 项目素材授权接口。
 
 ## 合规（对照 DSH 插件开发规范）
 
@@ -168,7 +164,7 @@ dev/
 ## 已知限制
 
 - **wma / amr**：Chromium 系浏览器没有解码器。插件会明确提示「解码失败」，播放也会失败——这是浏览器能力边界，不是渲染问题。
-- 解码始终自动进行；只有超过 30 分钟的文件才跳过解码（仅流式播放），此时会明确说明原因，而不是留一个要你点的按钮。
+- 可见且在分析预算内的文件自动解码；超预算保留流式试听并显示原因。关闭频谱或隐藏面板不影响 A/B 选区循环。
 - 频谱图按视窗重算（列数 = 画布像素、频段上限 512、mel 轴、最近邻绘制），细节随缩放增长；只有整曲一屏时受画布像素数约束。
 - 单声道视图深放大时停留在裁剪的整曲 4000 列包络上（逐声道 PCM 不保留，只有下混单声道保留）；mix 视图无此限制。
 - 频谱需要 Web Audio；不可用（或被策略禁用）时只提示并停用频谱，波形与播放不受影响。

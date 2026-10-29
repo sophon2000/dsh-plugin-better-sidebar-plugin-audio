@@ -5,8 +5,8 @@
  * Playback streams through the host half's Range route on a plain audio
  * element (any size, native seeking, native rate/loop), and Web Audio is
  * attached only for the analyser and — on demand — for decoding the waveform
- * envelope and the spectrogram grid. The decoded PCM is dropped immediately,
- * so the viewer keeps a few hundred kilobytes no matter how long the file is.
+ * envelope and the spectrogram grid. Analysis has explicit duration, compressed
+ * byte and PCM budgets; larger files retain streaming playback without decoding.
  *
  * Layout: the main lane is the ONLY flexible row and its canvas is measured to
  * the lane's height (no dead strip under a fixed-height canvas), while the
@@ -25,7 +25,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import { MAX_DECODE_SECONDS, decodeAudio, fetchBytes, type DecodedAudio } from './decode.ts'
+import { MAX_DECODE_SECONDS, MAX_FETCH_BYTES, decodeAudio, fetchBytes, type DecodedAudio } from './decode.ts'
 import { drawSpectrogramFrame, drawSpectrum, drawTimeRuler, drawWaterfallFrame, drawWaveform } from './draw.ts'
 import { labelsFor, pickLang } from './labels.ts'
 import { computeChannelPeaks, mixChannelPeaks, type ChannelPeaks } from './peaks.ts'
@@ -92,6 +92,8 @@ interface DragState {
 export interface AudioViewerProps {
   /** Source facts from load(), or the failure to display. */
   data: ViewerData
+  /** Parked sidebar panes stay mounted; stop analysis and drawing while hidden. */
+  visible?: boolean | undefined
 }
 
 /**
@@ -161,7 +163,7 @@ function prepareCanvas(
  * @param props - the loaded source facts.
  * @returns the player pane, or the failure panel.
  */
-export function AudioViewer({ data }: AudioViewerProps): ReactNode {
+export function AudioViewer({ data, visible = true }: AudioViewerProps): ReactNode {
   const lang = useMemo(() => pickLang(typeof navigator === 'undefined' ? undefined : navigator.languages), [])
   const t = useMemo(() => labelsFor(lang), [lang])
   const failed = isSourceError(data)
@@ -181,6 +183,8 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
   const layoutRef = useRef<SpectrumLayout | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const decodeAbortRef = useRef<AbortController | null>(null)
+  const decodeInFlightRef = useRef<Promise<void> | null>(null)
+  const metadataSourceRef = useRef<string | null>(null)
   const decodeStartedRef = useRef(false)
   const lastTimeRef = useRef(0)
   const lastPeakRef = useRef(0)
@@ -230,7 +234,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     () => (duration > 0 ? clampView(view, duration) : view),
     [duration, view],
   )
-  const loopWindow = abRange(selection)
+  const loopWindow = useMemo(() => abRange(selection), [selection])
 
   useEffect(() => {
     ensureViewerStyles()
@@ -254,14 +258,22 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
   useEffect(() => {
     if (sourceUrl === null) return
     decodeStartedRef.current = false
+    metadataSourceRef.current = null
+    setDecoded(null)
+    setDuration(0)
+    setSelection(null)
+    setHeatmap({ image: null, spec: null })
+    setDecodeState({ status: 'idle', loaded: 0, total: 0 })
     const player = createPlayer(sourceUrl)
     playerRef.current = player
     const element = player.element
     const onMetadata = () => {
+      const firstMetadata = metadataSourceRef.current !== sourceUrl
+      metadataSourceRef.current = sourceUrl
       const value = Number.isFinite(element.duration) ? element.duration : 0
       if (value > 0) {
         setDuration(value)
-        setView(current => (current.end <= 0 || current.end > value ? fullView(value) : current))
+        setView(current => (firstMetadata || current.end <= 0 || current.end > value ? fullView(value) : current))
       }
       setReady(true)
     }
@@ -310,6 +322,31 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     player.element.muted = muted
   }, [loopMode, muted, rate, ready, volume])
 
+  // Playback loop control is independent of spectrum visibility and pane painting.
+  useEffect(() => {
+    const player = playerRef.current
+    const element = player?.element
+    if (element === undefined || loopMode !== 'ab' || loopWindow === null) return
+    const rewind = (ended = false) => {
+      if ((!element.paused || ended) && element.currentTime >= loopWindow.end - 0.02) {
+        element.currentTime = loopWindow.start
+        lastTimeRef.current = loopWindow.start
+        setTime(loopWindow.start)
+        if (ended) void player?.play().catch(() => setNotice(t.loadFailed))
+      }
+    }
+    const onTime = () => rewind()
+    const onEnded = () => rewind(true)
+    element.addEventListener('timeupdate', onTime)
+    element.addEventListener('ended', onEnded)
+    const timer = playing ? setInterval(rewind, 20) : undefined
+    return () => {
+      element.removeEventListener('timeupdate', onTime)
+      element.removeEventListener('ended', onEnded)
+      if (timer !== undefined) clearInterval(timer)
+    }
+  }, [loopMode, loopWindow, playing, sourceUrl, t.loadFailed])
+
   // Decoding ----------------------------------------------------------------
   const runDecode = useCallback(async (): Promise<void> => {
     if (sourceUrl === null) return
@@ -317,41 +354,55 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     const controller = new AbortController()
     decodeAbortRef.current = controller
     setDecodeState({ status: 'running', loaded: 0, total: sourceSize })
-    try {
-      const bytes = await fetchBytes(sourceUrl, {
-        signal: controller.signal,
-        onProgress: (loaded, total) => setDecodeState(previous => (
-          previous.status === 'running'
-            ? { status: 'running', loaded, total: total > 0 ? total : previous.total }
-            : previous
-        )),
-      })
-      const result = await decodeAudio(bytes)
+    const previous = decodeInFlightRef.current
+    const operation = (async () => {
+      // A hidden pane can cancel fetch, but native decode must finish before
+      // a later visible cycle starts another decode for this viewer.
+      await previous
       if (controller.signal.aborted) return
-      setDecoded(result)
-      setDecodeState({ status: 'done', loaded: 0, total: 0 })
-      setDuration(previous => (previous > 0 ? previous : result.duration))
-      setView(fullView(result.duration))
-      setChannel(current => (current === 'mix' || current < result.channels ? current : 'mix'))
-    } catch (error) {
-      if (controller.signal.aborted) return
-      setDecodeState({
-        status: 'failed',
-        loaded: 0,
-        total: 0,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
+      try {
+        const bytes = await fetchBytes(sourceUrl, {
+          signal: controller.signal,
+          onProgress: (loaded, total) => setDecodeState(previous => (
+            previous.status === 'running'
+              ? { status: 'running', loaded, total: total > 0 ? total : previous.total }
+              : previous
+          )),
+        })
+        const result = await decodeAudio(bytes, { signal: controller.signal })
+        if (controller.signal.aborted) return
+        setDecoded(result)
+        setDecodeState({ status: 'done', loaded: 0, total: 0 })
+        setDuration(previous => (previous > 0 ? previous : result.duration))
+        setView(fullView(result.duration))
+        setChannel(current => (current === 'mix' || current < result.channels ? current : 'mix'))
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setDecodeState({
+          status: 'failed',
+          loaded: 0,
+          total: 0,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })()
+    decodeInFlightRef.current = operation
+    await operation
   }, [sourceSize, sourceUrl])
 
-  // Decoding is automatic — opening a file is already the intent to look at
-  // it. Only absurdly long recordings are skipped, and that is reported instead
-  // of asking the user to press a button.
+  // Analyze small visible files automatically; streaming remains available beyond the budget.
   useEffect(() => {
+    if (!visible) {
+      decodeStartedRef.current = false
+      setDecoded(null)
+      setHeatmap({ image: null, spec: null })
+      setWaveWindow(null)
+      return
+    }
     if (sourceUrl === null) return
-    if (duration <= 0 || decodeStartedRef.current) return
+    if (metadataSourceRef.current !== sourceUrl || duration <= 0 || decodeStartedRef.current) return
     decodeStartedRef.current = true
-    if (duration > MAX_DECODE_SECONDS) {
+    if (duration > MAX_DECODE_SECONDS || sourceSize > MAX_FETCH_BYTES || sourceSize <= 0) {
       setNotice(t.tooLong)
       return
     }
@@ -359,13 +410,14 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     return () => {
       decodeAbortRef.current?.abort()
     }
-  }, [duration, runDecode, sourceUrl, t.tooLong])
+  }, [duration, runDecode, sourceUrl, sourceSize, t.tooLong, visible])
 
   // Layout ------------------------------------------------------------------
   // The canvas paints at exactly the box it occupies: it is absolutely
   // positioned inside the lane (CSS owns the layout), so measuring it can never
   // feed back into the layout.
   useEffect(() => {
+    if (!visible) return
     const canvas = laneCanvasRef.current
     if (canvas === null) return
     const measure = () => setCanvasBox({
@@ -380,13 +432,14 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     const observer = new ResizeObserver(measure)
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [mainView])
+  }, [mainView, visible])
 
   // The heat map is derived from the WINDOW ON SCREEN, not from the whole
   // file: zooming in then re-derives the same column count from fewer seconds,
   // so detail grows with the zoom instead of magnifying a few coarse cells.
   // Debounced, because a drag would otherwise queue one STFT per frame.
   useEffect(() => {
+    if (!visible) return
     const mono = decoded?.mono
     const sampleRate = decoded?.sampleRate ?? 0
     if (mainView !== 'spectrogram' || mono === undefined || mono.length === 0 || sampleRate <= 0) return
@@ -412,7 +465,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
       setHeatmap({ image: canvas, spec })
     }, 120)
     return () => clearTimeout(timer)
-  }, [canvasBox.height, canvasBox.width, decoded, effectiveView, mainView, palette.variant])
+  }, [canvasBox.height, canvasBox.width, decoded, effectiveView, mainView, palette.variant, visible])
 
   // The waveform gets the same treatment as the heat map: while the whole-file
   // envelope still has more columns in the window than the lane has pixels it
@@ -429,6 +482,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
   // very long recording) re-derive on a debounce instead, keeping the UI
   // responsive while dragging.
   const syncWindowPeaks = useMemo<ChannelPeaks | null>(() => {
+    if (!visible) return null
     const mono = decoded?.mono
     const sampleRate = decoded?.sampleRate ?? 0
     if (
@@ -447,12 +501,13 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     const to = Math.min(mono.length, Math.ceil(effectiveView.end * sampleRate))
     if (to - from < 2) return null
     return computeChannelPeaks(mono.subarray(from, to), targetColumns)
-  }, [canvasBox.width, channel, decoded, duration, effectiveView])
+  }, [canvasBox.width, channel, decoded, duration, effectiveView, visible])
 
   // Debounced fallback for windows too big to re-derive in a render: the
   // previous result is kept (and simply stops matching) until the new one is
   // ready, so a zoom never flashes a coarse envelope mid-gesture.
   useEffect(() => {
+    if (!visible) return
     if (syncWindowPeaks !== null || decoded === null || decoded.duration <= 0) {
       return
     }
@@ -478,10 +533,11 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
       })
     }, 120)
     return () => clearTimeout(timer)
-  }, [canvasBox.width, channel, decoded, duration, effectiveView, syncWindowPeaks])
+  }, [canvasBox.width, channel, decoded, duration, effectiveView, syncWindowPeaks, visible])
 
   // Main lane ---------------------------------------------------------------
   useEffect(() => {
+    if (!visible) return
     const { width, height } = canvasBox
     const context = prepareCanvas(laneCanvasRef.current, width, height, devicePixelRatioOf())
     if (context === null) return
@@ -550,13 +606,15 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
     showRms,
     waveWindow,
     syncWindowPeaks,
+    visible,
   ])
 
   useEffect(() => {
+    if (!visible) return
     const context = prepareCanvas(rulerCanvasRef.current, canvasBox.width, RULER_HEIGHT, devicePixelRatioOf())
     if (context === null) return
     drawTimeRuler(context, { width: canvasBox.width, height: RULER_HEIGHT, view: effectiveView, colors: palette })
-  }, [canvasBox.width, palette, effectiveView])
+  }, [canvasBox.width, palette, effectiveView, visible])
 
   // Playhead + hover-cursor overlay ---------------------------------------
   // A separate canvas animated by requestAnimationFrame and fed straight
@@ -570,6 +628,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
   }, [cursor])
 
   useEffect(() => {
+    if (!visible) return
     if (typeof requestAnimationFrame !== 'function') return
     let frame = 0
     let stopped = false
@@ -614,7 +673,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
       stopped = true
       cancelAnimationFrame(frame)
     }
-  }, [canvasBox, duration, effectiveView, palette])
+  }, [canvasBox, duration, effectiveView, palette, visible])
 
   // Live spectrum -----------------------------------------------------------
   const paintSpectrum = useCallback((player: Player): void => {
@@ -687,6 +746,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
   useEffect(() => {
     if (sourceUrl === null) return
     if (spectrumStyle === 'off') return
+    if (!visible) return
     if (typeof requestAnimationFrame !== 'function') return
     let frame = 0
     let stopped = false
@@ -701,11 +761,6 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
         lastTimeRef.current = current
         setTime(current)
       }
-      if (loopMode === 'ab' && loopWindow !== null && !element.paused && current >= loopWindow.end - 0.02) {
-        element.currentTime = loopWindow.start
-        lastTimeRef.current = loopWindow.start
-        setTime(loopWindow.start)
-      }
       frameSkipRef.current = (frameSkipRef.current + 1) % (element.paused ? 8 : 1)
       if (frameSkipRef.current !== 0) return
       paintSpectrum(player)
@@ -715,7 +770,7 @@ export function AudioViewer({ data }: AudioViewerProps): ReactNode {
       stopped = true
       cancelAnimationFrame(frame)
     }
-  }, [loopMode, loopWindow, paintSpectrum, sourceUrl, spectrumStyle])
+  }, [paintSpectrum, sourceUrl, spectrumStyle, visible])
 
   // Interaction -------------------------------------------------------------
   const seekTo = useCallback((seconds: number): void => {

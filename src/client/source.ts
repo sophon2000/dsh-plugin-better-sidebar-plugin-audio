@@ -2,8 +2,8 @@
  * The client side of the plugin's own media route: resolve one file to a
  * playable URL and its facts. The host owns cwd resolution (it reads the
  * session's authoritative cwd), so the request only carries what the viewer
- * knows: the session id, the path as better-sidebar handed it over, and — when
- * the scope happens to carry one — a cwd fallback for the hydration window.
+ * knows: the existing session id and path. A legacy cwd hint can be sent for
+ * compatibility, but the Host ignores it for authorization and resolution.
  *
  * @module @huanlin/dsh-plugin-better-sidebar-plugin-audio/client/source
  */

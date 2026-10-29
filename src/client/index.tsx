@@ -83,7 +83,7 @@ export function apply(ctx: Context): void {
     load: (path: string, scope: { sessionId: string; cwd?: string | undefined }, signal?: AbortSignal) =>
       loadAudioSource(path, { sessionId: scope.sessionId, cwd: scope.cwd }, signal),
     component: (props: FileViewerProps) => (
-      <AudioViewer data={props.customData as ViewerData} />
+      <AudioViewer data={props.customData as ViewerData} visible={props.visible} />
     ),
   }), 'dsh-audio-preview: file viewer')
 }

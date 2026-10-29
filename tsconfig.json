@@ -20,27 +20,7 @@
     "noEmit": true,
     "types": [
       "node"
-    ],
-    "paths": {
-      "@deepseek-ai/cordis": [
-        "D:/Projects/deepseek-harness/dsh/vendor/cordis/lib/types/index.d.ts"
-      ],
-      "dsh-better-sidebar": [
-        "D:/Projects/deepseek-harness/DSH-better-sidebar/lib/types/index.d.ts"
-      ],
-      "dsh-better-sidebar/client": [
-        "D:/Projects/deepseek-harness/DSH-better-sidebar/lib/types/client/index.d.ts"
-      ],
-      "dsh-better-sidebar/client/service": [
-        "D:/Projects/deepseek-harness/DSH-better-sidebar/lib/types/client/service.d.ts"
-      ],
-      "react": [
-        "./node_modules/@types/react/index.d.ts"
-      ],
-      "react/jsx-runtime": [
-        "./node_modules/@types/react/jsx-runtime.d.ts"
-      ]
-    }
+    ]
   },
   "include": [
     "src",

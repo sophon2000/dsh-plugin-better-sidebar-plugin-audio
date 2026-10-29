@@ -15,7 +15,7 @@ export declare const name = "dsh-plugin-better-sidebar-plugin-audio";
 /**
  * Services required before mounting: the webserver (the media route), the
  * session store (the authoritative cwd of the requesting session) and the web
- * startup (`trustedHosts` for the fence).
+ * connection (the Host authentication and browser policy).
  */
 export declare const inject: string[];
 /**

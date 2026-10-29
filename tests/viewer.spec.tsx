@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AudioSourceFacts } from '../src/client/source.ts'
 
@@ -56,6 +56,9 @@ const source: AudioSourceFacts = {
 }
 
 beforeEach(() => {
+  player.element.duration = 12
+  player.element.currentTime = 0
+  player.element.paused = true
   // jsdom has no canvas backend; the viewer must cope with a null context.
   HTMLCanvasElement.prototype.getContext = (() => null) as unknown as HTMLCanvasElement['getContext']
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
@@ -63,11 +66,92 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
 describe('AudioViewer', () => {
+  it('stops all animation frames while parked without pausing streaming playback', () => {
+    let next = 0
+    const frames = new Map<number, FrameRequestCallback>()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++next, callback); return next })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+    const pane = render(<AudioViewer data={source} visible />)
+    expect(frames.size).toBeGreaterThan(0)
+    pane.rerender(<AudioViewer data={source} visible={false} />)
+    expect(frames.size).toBe(0)
+    expect(player.pause).not.toHaveBeenCalled()
+    pane.rerender(<AudioViewer data={source} visible />)
+    expect(frames.size).toBeGreaterThan(0)
+  })
+
+  it('keeps the selected A/B loop active with spectrum off and while parked', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('PointerEvent', MouseEvent)
+    const pane = render(<AudioViewer data={source} />)
+    act(() => player.emit('loadedmetadata'))
+    const lane = pane.container.querySelector('.dsh-audio__lane') as HTMLElement
+    fireEvent.pointerDown(lane, { clientX: 20, shiftKey: true, button: 0 })
+    fireEvent.pointerMove(lane, { clientX: 80, shiftKey: true })
+    fireEvent.pointerUp(lane)
+    fireEvent.change(screen.getByLabelText('Loop'), { target: { value: 'ab' } })
+    fireEvent.change(screen.getByLabelText('Spectrum'), { target: { value: 'off' } })
+    player.element.paused = false
+    act(() => player.emit('play'))
+    player.element.currentTime = 9
+    act(() => vi.advanceTimersByTime(30))
+    expect(player.element.currentTime).toBeCloseTo(2)
+    pane.rerender(<AudioViewer data={source} visible={false} />)
+    player.element.currentTime = 9
+    act(() => vi.advanceTimersByTime(30))
+    expect(player.element.currentTime).toBeCloseTo(2)
+  })
+
+  it('restarts an A/B selection ending at the media end', () => {
+    vi.stubGlobal('PointerEvent', MouseEvent)
+    const pane = render(<AudioViewer data={source} />)
+    act(() => player.emit('loadedmetadata'))
+    const lane = pane.container.querySelector('.dsh-audio__lane') as HTMLElement
+    fireEvent.pointerDown(lane, { clientX: 20, shiftKey: true, button: 0 })
+    fireEvent.pointerMove(lane, { clientX: 120, shiftKey: true })
+    fireEvent.pointerUp(lane)
+    fireEvent.change(screen.getByLabelText('Loop'), { target: { value: 'ab' } })
+    fireEvent.change(screen.getByLabelText('Spectrum'), { target: { value: 'off' } })
+    player.element.currentTime = 12
+    player.element.paused = true
+    act(() => player.emit('ended'))
+    expect(player.element.currentTime).toBeCloseTo(2)
+    expect(player.play).toHaveBeenCalledOnce()
+  })
+
+  it('waits for an uncancellable decode before starting a new visible analysis', async () => {
+    const finishes: Array<(value: unknown) => void> = []
+    const decode = vi.fn(() => new Promise(resolve => finishes.push(resolve)))
+    vi.stubGlobal('OfflineAudioContext', class { decodeAudioData = decode })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1]))))
+    const pane = render(<AudioViewer data={source} />)
+    act(() => player.emit('loadedmetadata'))
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledOnce())
+    pane.rerender(<AudioViewer data={source} visible={false} />)
+    pane.rerender(<AudioViewer data={source} visible />)
+    await act(async () => { await Promise.resolve() })
+    expect(decode).toHaveBeenCalledOnce()
+    const buffer = { duration: 12, length: 4, numberOfChannels: 1, sampleRate: 44100, getChannelData: () => new Float32Array(4) }
+    await act(async () => { finishes[0]!(buffer) })
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledTimes(2))
+    await act(async () => { finishes[1]!(buffer) })
+  })
+
+  it('streams large files without automatically downloading them for analysis', () => {
+    render(<AudioViewer data={{ ...source, size: 17 * 1024 * 1024 }} />)
+    act(() => player.emit('loadedmetadata'))
+    expect(fetch).not.toHaveBeenCalled()
+    expect(screen.getByText(/Analysis budget exceeded/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    expect(player.play).toHaveBeenCalled()
+  })
+
   it('renders the transport, the file facts and a single-line read-out', () => {
     const { container } = render(<AudioViewer data={source} />)
     expect(screen.getByRole('toolbar')).toBeTruthy()

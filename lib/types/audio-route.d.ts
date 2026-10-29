@@ -15,13 +15,11 @@
  * and answers `416` with a `Content-Range` header naming the full size when a
  * range cannot be satisfied.
  *
- * Requests carry a `sessionId`; the session's authoritative `cwd` is used for
- * relative paths (client-supplied `cwd` is the fallback while the session is
- * still hydrating, `process.cwd()` the last resort). Absolute paths are used
- * as written — like better-sidebar's own file routes since v0.23.0, the cwd is
- * a base, not a boundary. `~` expands against the home directory. The route is
- * additionally narrowed to {@link AUDIO_EXTS}, so it cannot serve a
- * non-audio file at all.
+ * Requests carry a sessionId that must resolve to an attached or persisted
+ * Host session. The committed cwd (or stored header before attach) resolves
+ * relative paths. Client cwd hints never grant access or create a session.
+ * Absolute paths retain the desktop file-preview contract; the Host connection
+ * authenticates every request. Only supported audio extensions are served.
  *
  * @module @huanlin/dsh-plugin-better-sidebar-plugin-audio/audio-route
  */
@@ -46,16 +44,28 @@ export interface AudioRouteContext {
     } | undefined;
     /** The session store (`ctx.sessions`), read only for the authoritative cwd. */
     sessions?: {
-        get(id: string): {
-            header?: {
+        get(id: string): AudioSession | undefined;
+    } | undefined;
+    /** Authentication and browser policy belong to the Host, not this plugin. */
+    connection?: {
+        requestRejection(request: IncomingMessage): unknown;
+    } | undefined;
+    /** Read optional Host services without hydrating a detached session log. */
+    get?(name: 'sessionPersistence'): {
+        stat(id: string): Promise<{
+            header: {
                 cwd?: string;
             };
-        } | undefined;
+        } | undefined>;
     } | undefined;
-    /** The web startup (`ctx.webStartup`), read only for `trustedHosts`. */
-    webStartup?: {
-        trustedHosts?: readonly string[];
+    get?(name: 'workingDirectory'): {
+        get(session: AudioSession): string | undefined;
     } | undefined;
+}
+interface AudioSession {
+    header?: {
+        cwd?: string;
+    };
 }
 /** Wire error with a stable code, mirroring better-sidebar's error envelope. */
 export declare class AudioRouteError extends Error {
@@ -89,12 +99,11 @@ export declare function parseRange(raw: string | undefined, size: number): {
 export declare function resolveMediaPath(raw: string, cwd: string): string;
 /**
  * Resolve the session's authoritative working directory.
- * @param sessions - the session store face (may be absent during hydration).
- * @param sessionId - the requesting session.
- * @param clientCwd - the caller's own cwd, used while the session is detached.
- * @returns the cwd to resolve relative paths against.
+ * @param ctx - Host session, persistence and working-directory services.
+ * @param sessionId - An existing attached or persisted session.
+ * @returns The trusted cwd; unknown sessions are refused.
  */
-export declare function sessionCwdOf(sessions: AudioRouteContext['sessions'], sessionId: string, clientCwd: string | undefined): string;
+export declare function sessionCwdOf(ctx: AudioRouteContext, sessionId: string): Promise<string>;
 /** File facts answered by the metadata probe. */
 export interface AudioFileFacts {
     /** Absolute path that was served. */
@@ -128,3 +137,4 @@ export declare function handleAudioRequest(request: IncomingMessage, response: S
  * @returns the disposer that unregisters the route.
  */
 export declare function registerAudioRoutes(ctx: AudioRouteContext): () => void;
+export {};
