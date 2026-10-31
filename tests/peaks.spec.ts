@@ -32,11 +32,12 @@ describe('computeChannelPeaks', () => {
     expect(peaks.rms[1]).toBe(1)
   })
 
-  it('covers every sample when there are more columns than samples', () => {
+  it('covers every column without inventing silence when there are fewer samples', () => {
     const peaks = computeChannelPeaks(pcm([0.5, -0.5]), 4)
-    expect(peaks.max[3]).toBeCloseTo(-0 + 0, 6)
-    expect(Array.from(peaks.max).filter(v => v === 0.5).length).toBe(1)
-    expect(Array.from(peaks.min).filter(v => v === -0.5).length).toBe(1)
+    expect(Array.from(peaks.max)).toEqual([0.5, 0.5, 0, 0])
+    expect(Array.from(peaks.min)).toEqual([0, 0, -0.5, -0.5])
+    expect(Array.from(peaks.rms)).toEqual([0.5, 0.5, 0.5, 0.5])
+    expect(peaksWindowStats([peaks], 0, 3).rms).toBeCloseTo(0.5, 6)
   })
 })
 

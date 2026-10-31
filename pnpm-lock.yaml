@@ -27,8 +27,8 @@ importers:
         specifier: ~18.3.1
         version: 18.3.7(@types/react@18.3.31)
       dsh-better-sidebar:
-        specifier: 0.28.2-vh.3
-        version: 0.28.2-vh.3(@deepseek-ai/cordis@4.0.6-alpha.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: 0.28.2-vh.4
+        version: 0.28.2-vh.4(@deepseek-ai/cordis@4.0.6-alpha.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -1288,8 +1288,8 @@ packages:
   dompurify@3.4.17:
     resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==, tarball: https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz}
 
-  dsh-better-sidebar@0.28.2-vh.3:
-    resolution: {integrity: sha512-/O8A9wUK2NjfvTiTYObboA+RH7BnSTQZmMVYyWjHmgeWwP5hr9s2uerAZM75T72EUESnppgVlafi6PbhZk3SbA==}
+  dsh-better-sidebar@0.28.2-vh.4:
+    resolution: {integrity: sha512-1L1ykyxL9X0IVckmuxZDQDkx7+ThUYQRQhZRMdvxh3l31tzviYNd208X2TdH3odaonhUiM+wIiCa0IXfITmK9A==}
     engines: {node: '>=20'}
     peerDependencies:
       '@deepseek-ai/cordis': 4.0.6-alpha.1
@@ -3055,7 +3055,7 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
-  dsh-better-sidebar@0.28.2-vh.3(@deepseek-ai/cordis@4.0.6-alpha.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  dsh-better-sidebar@0.28.2-vh.4(@deepseek-ai/cordis@4.0.6-alpha.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@codemirror/commands': 6.11.1
       '@codemirror/lang-cpp': 6.0.3

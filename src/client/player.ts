@@ -70,6 +70,7 @@ export function createPlayer(url: string, options: PlayerOptions = {}): Player {
   let bins: Uint8Array<ArrayBuffer> | null = null
   let state: PlayerContextState = 'idle'
   let disposed = false
+  let playRequest = 0
 
   const ensureContext = (): boolean => {
     if (disposed) return false
@@ -129,23 +130,36 @@ export function createPlayer(url: string, options: PlayerOptions = {}): Player {
       return bins
     },
     async play(): Promise<void> {
+      if (disposed) return
+      const request = ++playRequest
       const ready = ensureContext()
-      if (ready && context !== null && context.state !== 'running') {
+      const current = context
+      if (ready && current !== null && current.state !== 'running') {
         try {
-          await context.resume()
+          await current.resume()
+          if (disposed || request !== playRequest) return
           // Re-read after the await: the guard above narrowed the pre-resume
           // state, so the comparison needs a fresh value to be meaningful.
           // Compared as a plain string: the guard above already narrowed
           // `context.state` to the non-running half of the union.
-          const resumed: string = context.state
+          const resumed: string = current.state
           state = resumed === 'running' ? 'running' : 'suspended'
         } catch {
+          if (disposed || request !== playRequest) return
           state = 'suspended'
         }
       }
-      await element.play()
+      // Stop/unmount may have retired this intent while resume was pending.
+      if (disposed || request !== playRequest) return
+      try {
+        await element.play()
+      } catch (error) {
+        // Native play() may reject when a later pause cancels its request.
+        if (!disposed && request === playRequest) throw error
+      }
     },
     pause(): void {
+      playRequest += 1
       try {
         element.pause()
       } catch {
@@ -153,6 +167,7 @@ export function createPlayer(url: string, options: PlayerOptions = {}): Player {
       }
     },
     dispose(): void {
+      playRequest += 1
       disposed = true
       try {
         element.pause()
