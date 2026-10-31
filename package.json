@@ -1,6 +1,6 @@
 {
   "name": "@huanlin/dsh-plugin-better-sidebar-plugin-audio",
-  "version": "0.1.0-vh.1",
+  "version": "0.1.0-vh.3",
   "description": "为 dsh-better-sidebar 提供音频预览：可缩放的波形播放器（点击/拖拽定位、A-B 循环、倍速、声道切换）与实时频谱（柱状/折线/瀑布），由插件自带的 HTTP Range 媒体路由支撑（任意大小、边播边播、可拖动进度）。 | Audio preview for dsh-better-sidebar: a zoomable waveform player (click/drag seek, A-B loop, playback rate, channel switch) plus a live spectrum view (bars/line/waterfall), backed by the plugin's own HTTP Range media route (any size, seekable streaming).",
   "type": "module",
   "license": "MIT",
@@ -66,8 +66,8 @@
     "harness": "node dev/build.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5",
-    "dsh-better-sidebar": "^0.28.2-vh.1",
+    "@deepseek-ai/cordis": "^4.0.6-alpha.1",
+    "dsh-better-sidebar": "^0.28.2-vh.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
@@ -98,8 +98,8 @@
     "tsdown": "^0.22.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.7",
-    "@deepseek-ai/cordis": "4.0.5",
-    "dsh-better-sidebar": "0.28.2"
+    "@deepseek-ai/cordis": "4.0.6-alpha.1",
+    "dsh-better-sidebar": "0.28.2-vh.3"
   },
   "packageManager": "pnpm@11.9.0"
 }

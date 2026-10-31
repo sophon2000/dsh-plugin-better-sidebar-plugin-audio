@@ -1,4 +1,4 @@
-> Video 维护 fork：`main` 跟随上游，`develop` 保留薄适配；当前 `0.1.0-vh.1` 面向 Better Sidebar `0.28.2-vh.1` 与固定 Video Host。上游基点 `9e59a980a6da85b92697412b8c239bdf5d6bbf66`。正式消费固定归档与摘要，不引用浮动分支。
+> Video 维护 fork：`main` 跟随上游，`develop` 保留薄适配；当前候选 `0.1.0-vh.3` 面向 Better Sidebar `0.28.2-vh.3`、Cordis `4.0.6-alpha.1` 与 DSH `0.2.2-alpha.2.vh.1.local.20261031.1`；本轮已从新固定归档生成 lock 并安装，构建与 host/client 双面类型检查通过，16 个 Vitest 文件 / 183 项通过。固定发行归档与产品浏览器验证单独验收。上游基点 `9e59a980a6da85b92697412b8c239bdf5d6bbf66`。正式消费固定归档与摘要，不引用浮动分支。
 
 <p align="center">
   <a href="https://dshfind.com/zh/plugins/huanlinoto/dsh-plugin-better-sidebar-plugin-audio"><img src="https://dshfind.com/api/card/huanlinoto/dsh-plugin-better-sidebar-plugin-audio?lang=zh" alt="dsh-plugin-better-sidebar-plugin-audio card"></a>
